@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Mesa de Dados</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -55,8 +56,46 @@
   .sub{
     font-size:12.5px;
     color: var(--parchment);
-    margin-bottom:16px;
+    margin-bottom:14px;
     text-align:center;
+  }
+
+  /* players */
+  .players{
+    width:100%;
+    max-width:340px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    justify-content:center;
+    margin-bottom:8px;
+  }
+  .player-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 10px;
+    border-radius:999px;
+    background: rgba(255,255,255,0.03);
+    border:1px solid rgba(242,232,213,0.12);
+    font-size:12.5px;
+    color: var(--parchment);
+    user-select:none;
+  }
+  .player-row input{ accent-color: var(--brass); width:14px; height:14px; }
+  .player-row.me{ border-color: rgba(201,162,39,0.5); color: var(--ivory); }
+  .player-row.active{ background: rgba(201,162,39,0.18); border-color: var(--brass); color: var(--brass-bright); }
+  .player-row.locked{ opacity:0.45; }
+  .player-row label{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .player-row.locked label{ cursor:not-allowed; }
+
+  .turn-banner{
+    min-height:18px;
+    font-size:13px;
+    font-weight:600;
+    color: var(--brass-bright);
+    text-align:center;
+    margin-bottom:10px;
   }
 
   .selector{
@@ -148,6 +187,7 @@
     text-transform:uppercase;
     margin: 10px 0 14px;
     height:16px;
+    text-align:center;
   }
 
   .actions{
@@ -172,23 +212,7 @@
     transition: transform .12s ease, box-shadow .12s ease, opacity .2s ease;
   }
   button.roll:active{ transform: scale(0.97); }
-  button.roll:disabled{ opacity:.55; cursor:default; transform:none; }
-
-  button.send{
-    flex:0 0 auto;
-    border:1px solid rgba(242,232,213,0.22);
-    background: rgba(255,255,255,0.03);
-    color: var(--ivory);
-    border-radius:999px;
-    padding:14px 16px;
-    font-family:'Space Grotesk';
-    font-weight:600;
-    font-size:13px;
-    cursor:pointer;
-    transition: opacity .2s ease, border-color .2s ease;
-  }
-  button.send:disabled{ opacity:.35; cursor:default; }
-  button.send.ready{ border-color: var(--brass); color: var(--brass-bright); }
+  button.roll:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
 
   .history{
     margin-top:18px;
@@ -209,13 +233,79 @@
     border:1px solid rgba(242,232,213,0.1);
   }
   .history .h-item b{ color: var(--brass-bright); font-weight:700;}
+
+  .link-row{
+    display:flex;
+    gap:10px;
+    width:100%;
+    max-width:340px;
+    margin-top:14px;
+  }
+  button.linkbtn{
+    flex:1;
+    border:1px solid rgba(242,232,213,0.22);
+    background: rgba(255,255,255,0.03);
+    color: var(--ivory);
+    border-radius:999px;
+    padding:10px 14px;
+    font-family:'Space Grotesk';
+    font-weight:600;
+    font-size:12.5px;
+    cursor:pointer;
+  }
+
+  /* name entry modal */
+  .name-modal{
+    position:fixed; inset:0;
+    background: rgba(5,15,10,0.78);
+    display:flex; align-items:center; justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .name-card{
+    background: var(--tray);
+    border:1px solid rgba(242,232,213,0.14);
+    border-radius:16px;
+    padding:22px;
+    width:100%; max-width:300px;
+    text-align:center;
+  }
+  .name-card h2{ font-family:'Fraunces'; font-weight:700; font-size:19px; margin:0 0 4px; color:var(--ivory); }
+  .name-card p{ font-size:12.5px; color:var(--parchment); margin:0 0 14px; }
+  .name-card input{
+    width:100%;
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid rgba(242,232,213,0.2);
+    background: rgba(255,255,255,0.04);
+    color: var(--ivory);
+    font-family:'Space Grotesk';
+    font-size:14px;
+    margin-bottom:6px;
+    outline:none;
+  }
+  .name-card .err{ font-size:11.5px; color: var(--ember); min-height:16px; margin-bottom:8px; text-align:left; }
+  .name-card button{
+    width:100%;
+    border:none;
+    border-radius:999px;
+    padding:11px;
+    font-weight:700;
+    font-family:'Space Grotesk';
+    background: linear-gradient(160deg, var(--brass-bright), var(--brass));
+    color:#2a2005;
+    cursor:pointer;
+  }
 </style>
 </head>
 <body>
 
   <div class="eyebrow">Mesa de Dados</div>
   <h1>Lance seu dado</h1>
-  <div class="sub">Escolha o dado e toque em lançar</div>
+  <div class="sub">Marque sua vez, escolha o dado e lance</div>
+
+  <div class="players" id="players"></div>
+  <div class="turn-banner" id="turnBanner">&nbsp;</div>
 
   <div class="selector" id="selector"></div>
 
@@ -228,17 +318,102 @@
   <div class="caption" id="caption">&nbsp;</div>
 
   <div class="actions">
-    <button class="roll" id="rollBtn">Lançar</button>
-    <button class="send" id="sendBtn" disabled>Enviar ao chat</button>
+    <button class="roll" id="rollBtn" disabled>Marque sua vez pra lançar</button>
   </div>
 
   <div class="history" id="history"></div>
 
+  <div class="link-row">
+    <button class="linkbtn" id="copyBtn">Copiar link da mesa</button>
+  </div>
+
+  <div class="name-modal" id="nameModal">
+    <div class="name-card">
+      <h2>Entrar na mesa</h2>
+      <p>Digite seu nome pra aparecer na lista de jogadores</p>
+      <input id="nameInput" type="text" maxlength="18" placeholder="Seu nome" autocomplete="off" />
+      <div class="err" id="nameErr">&nbsp;</div>
+      <button id="nameSubmit">Entrar</button>
+    </div>
+  </div>
+
 <script>
 (function(){
-  const tg = window.Telegram ? window.Telegram.WebApp : null;
-  if (tg) { tg.ready(); tg.expand(); try{ tg.setHeaderColor('#0b2418'); }catch(e){} try{ tg.setBackgroundColor('#0b2418'); }catch(e){} }
 
+  /* =========================================================
+     Firebase setup — cole as credenciais do SEU projeto aqui.
+     Firebase Console → Configurações do projeto → Seus apps → Config
+     ========================================================= */
+  const firebaseConfig = {
+    apiKey: "AIzaSyBeScUfwBkzMiEKbox29egWXNEMafbhvkk",
+    authDomain: "rpg-dice-sync.firebaseapp.com",
+    databaseURL: "https://rpg-dice-sync-default-rtdb.firebaseio.com",
+    projectId: "rpg-dice-sync"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // A mesa é definida por ?sala=nome na URL — pessoas com o mesmo link caem
+  // na mesma mesa. Sem o parâmetro, todo mundo cai na mesa "geral".
+  const params = new URLSearchParams(location.search);
+  const sala = (params.get('sala') || 'geral').replace(/[.#$\[\]\/]/g, '_');
+  const roomRef = db.ref('salas/' + sala);
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function vibrate(pattern){ if (navigator.vibrate) navigator.vibrate(pattern); }
+
+  /* ---------- identidade do jogador ---------- */
+  let playerId = localStorage.getItem('mesa_dados_id');
+  if (!playerId){
+    playerId = 'p_' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('mesa_dados_id', playerId);
+  }
+  let playerName = localStorage.getItem('mesa_dados_nome');
+
+  const nameModal = document.getElementById('nameModal');
+  const nameInput = document.getElementById('nameInput');
+  const nameErr = document.getElementById('nameErr');
+  const nameSubmit = document.getElementById('nameSubmit');
+
+  function enterTable(name){
+    playerName = name;
+    localStorage.setItem('mesa_dados_nome', playerName);
+    nameModal.style.display = 'none';
+    const meRef = roomRef.child('jogadores/' + playerId);
+    meRef.set({ name: playerName, ts: firebase.database.ServerValue.TIMESTAMP });
+    meRef.onDisconnect().remove();
+  }
+
+  nameSubmit.addEventListener('click', () => {
+    const v = nameInput.value.trim();
+    if (!v){ nameErr.textContent = 'Digite um nome pra continuar'; return; }
+    enterTable(v);
+  });
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') nameSubmit.click(); });
+
+  if (playerName){
+    nameModal.style.display = 'none';
+    const meRef = roomRef.child('jogadores/' + playerId);
+    meRef.set({ name: playerName, ts: firebase.database.ServerValue.TIMESTAMP });
+    meRef.onDisconnect().remove();
+  } else {
+    nameModal.style.display = 'flex';
+  }
+
+  /* ---------- copiar link da mesa ---------- */
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    const url = location.origin + location.pathname + '?sala=' + encodeURIComponent(sala);
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('copyBtn');
+      const old = btn.textContent;
+      btn.textContent = 'Link copiado!';
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    }).catch(() => { alert(url); });
+  });
+
+  /* ---------- dados / seleção local ---------- */
   const DICE = [
     { id:'d4',  sides:4,   label:'D4',  duration:900,  icon:'triangle' },
     { id:'d6',  sides:6,   label:'D6',  duration:1000, icon:'square' },
@@ -248,17 +423,19 @@
     { id:'d20', sides:20,  label:'D20', duration:1400, icon:'icosa' },
     { id:'d100',sides:100, label:'D100',duration:1500, icon:'pair' },
   ];
+  const DICE_BY_ID = Object.fromEntries(DICE.map(d => [d.id, d]));
 
   let current = DICE[1];
-  let lastResult = null;
   let rolling = false;
-  const history = [];
+  let myTurn = null; // {playerId, name, ts} or null
+  let lastRollTs = 0;
 
   const selectorEl = document.getElementById('selector');
   const captionEl = document.getElementById('caption');
   const rollBtn = document.getElementById('rollBtn');
-  const sendBtn = document.getElementById('sendBtn');
   const historyEl = document.getElementById('history');
+  const playersEl = document.getElementById('players');
+  const turnBanner = document.getElementById('turnBanner');
   const badge = document.getElementById('badge');
   const badgeNum = document.getElementById('badgeNum');
 
@@ -280,7 +457,6 @@
     DICE.forEach(d => {
       const chip = document.createElement('div');
       chip.className = 'chip' + (d.id === current.id ? ' active' : '');
-      chip.dataset.id = d.id;
       chip.innerHTML = iconSvg(d.icon) + `<span>${d.label}</span>`;
       chip.addEventListener('click', () => {
         if (rolling) return;
@@ -288,9 +464,6 @@
         buildChips();
         setDie(current.id);
         hideBadge();
-        sendBtn.disabled = true;
-        sendBtn.classList.remove('ready');
-        lastResult = null;
         captionEl.textContent = '';
       });
       selectorEl.appendChild(chip);
@@ -302,7 +475,6 @@
     badge.style.opacity = 0;
     badge.style.transform = 'translate(-50%,-50%) scale(0.4)';
   }
-
   function showResult(result){
     badgeNum.textContent = result;
     badge.classList.remove('show');
@@ -310,11 +482,131 @@
     badge.classList.add('show');
   }
 
-  function pushHistory(label, value){
-    history.unshift({ label, value });
-    if (history.length > 8) history.pop();
-    historyEl.innerHTML = history.map(h => `<span class="h-item">${h.label} <b>${h.value}</b></span>`).join('');
+  /* ---------- lista de jogadores + vez ---------- */
+  let latestPlayers = {};
+  function renderPlayers(){
+    const entries = Object.entries(latestPlayers);
+    if (!entries.length){ playersEl.innerHTML = ''; return; }
+    playersEl.innerHTML = entries.map(([id, p]) => {
+      const isMe = id === playerId;
+      const holder = myTurn && myTurn.playerId === id;
+      const lockedOut = myTurn && !holder;
+      const rowClass = ['player-row', isMe ? 'me' : '', holder ? 'active' : '', lockedOut ? 'locked' : ''].filter(Boolean).join(' ');
+      const disabled = isMe ? '' : 'disabled';
+      return `<div class="${rowClass}">
+        <label>
+          <input type="checkbox" data-pid="${id}" ${holder ? 'checked' : ''} ${disabled}/>
+          <span>${escapeHtml(p.name)}${isMe ? ' (você)' : ''}</span>
+        </label>
+      </div>`;
+    }).join('');
+    playersEl.querySelectorAll('input[type=checkbox]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const id = inp.dataset.pid;
+        if (id !== playerId) return;
+        if (myTurn && myTurn.playerId === playerId){
+          roomRef.child('vez').remove();
+        } else {
+          claimTurn();
+        }
+      });
+    });
   }
+
+  function claimTurn(){
+    const vezRef = roomRef.child('vez');
+    vezRef.transaction(curr => {
+      if (curr === null) return { playerId, name: playerName, ts: Date.now() };
+      if (curr && (Date.now() - curr.ts > 15000)) return { playerId, name: playerName, ts: Date.now() };
+      return; // aborta — alguém já está com a vez
+    });
+  }
+
+  function renderTurnState(){
+    if (!myTurn){
+      rollBtn.disabled = true;
+      rollBtn.textContent = 'Marque sua vez pra lançar';
+      turnBanner.innerHTML = '&nbsp;';
+    } else if (myTurn.playerId === playerId){
+      rollBtn.disabled = rolling;
+      rollBtn.textContent = 'Lançar';
+      turnBanner.textContent = 'Sua vez — escolha o dado e lance';
+    } else {
+      rollBtn.disabled = true;
+      rollBtn.textContent = `${myTurn.name} está com a vez`;
+      turnBanner.textContent = `🎲 ${myTurn.name} está com a vez`;
+    }
+    renderPlayers();
+  }
+
+  roomRef.child('jogadores').on('value', snap => {
+    latestPlayers = snap.val() || {};
+    renderPlayers();
+  });
+
+  roomRef.child('vez').on('value', snap => {
+    myTurn = snap.val();
+    renderTurnState();
+  });
+
+  /* ---------- rolagem sincronizada ---------- */
+  function pushHistory(label, value, name){
+    const row = document.createElement('span');
+    row.className = 'h-item';
+    row.innerHTML = `${escapeHtml(label)} <b>${escapeHtml(String(value))}</b> · ${escapeHtml(name)}`;
+    historyEl.insertBefore(row, historyEl.firstChild);
+    while (historyEl.children.length > 8) historyEl.removeChild(historyEl.lastChild);
+  }
+
+  roomRef.child('rolagem').limitToLast(1).on('child_added', snap => {
+    const r = snap.val();
+    if (!r || r.ts === lastRollTs) return;
+    lastRollTs = r.ts;
+    playSyncedRoll(r);
+  });
+
+  async function playSyncedRoll(r){
+    rolling = true;
+    hideBadge();
+    turnBanner.textContent = `🎲 ${r.name} está lançando o ${r.label}…`;
+    captionEl.textContent = 'Rolando…';
+
+    const dieDef = DICE_BY_ID[r.die] || current;
+    if (dieDef.id !== current.id){
+      current = dieDef;
+      buildChips();
+    }
+    setDie(dieDef.id);
+    vibrate(30);
+
+    await startRoll(dieDef.duration);
+
+    showResult(r.result);
+    captionEl.textContent = `${dieDef.label} · ${r.name} tirou ${r.result}`;
+    turnBanner.textContent = `🎲 ${r.name} tirou ${r.result} no ${dieDef.label}`;
+    pushHistory(dieDef.label, r.result, r.name);
+    vibrate([10, 30, 10]);
+    rolling = false;
+
+    // quem lançou libera a vez depois que a animação termina
+    if (r.playerId === playerId){
+      roomRef.child('vez').remove();
+    }
+    renderTurnState();
+  }
+
+  async function requestRoll(){
+    if (rolling) return;
+    if (!myTurn || myTurn.playerId !== playerId) return;
+    const result = 1 + Math.floor(Math.random() * current.sides);
+    roomRef.child('rolagem').push({
+      playerId, name: playerName,
+      die: current.id, label: current.label, sides: current.sides,
+      result, ts: Date.now()
+    });
+  }
+
+  rollBtn.addEventListener('click', requestRoll);
 
   /* ---------- Three.js 3D dice, numbered faces, glossy sticker look ---------- */
   let scene, camera, renderer, dieGroup, idleSpin = true;
@@ -336,7 +628,6 @@
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 128;
     const ctx = canvas.getContext('2d');
-    // the "1" face gets a red pip, like the accent dot on a classic die
     ctx.fillStyle = (n === 1) ? ACCENT_RED : INK_COLOR;
     ctx.font = "bold 78px Georgia, 'Times New Roman', serif";
     ctx.textAlign = 'center';
@@ -347,9 +638,6 @@
     return tex;
   }
 
-  // Groups a geometry's triangles into flat faces by shared normal,
-  // returning each face's centroid + outward normal. Works for any
-  // convex polyhedron without needing to know its internal triangulation.
   function getFaceGroups(geometry){
     const geo = geometry.index ? geometry.toNonIndexed() : geometry;
     const pos = geo.attributes.position;
@@ -503,7 +791,6 @@
     const fill = new THREE.DirectionalLight(0x8fd0b0, 0.25);
     fill.position.set(-3, -2, 2);
     scene.add(fill);
-    // small bright point light for the glossy plastic highlight
     const shine = new THREE.PointLight(0xffffff, 0.9, 8);
     shine.position.set(1.4, 2.2, 2.6);
     scene.add(shine);
@@ -565,45 +852,6 @@
       if (rollState.resolve) rollState.resolve();
     }
   }
-
-  async function roll(){
-    if (rolling) return;
-    rolling = true;
-    idleSpin = false;
-    rollBtn.disabled = true;
-    sendBtn.disabled = true;
-    sendBtn.classList.remove('ready');
-    hideBadge();
-    captionEl.textContent = 'Rolando…';
-
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('rigid');
-
-    await startRoll(current.duration);
-
-    const result = 1 + Math.floor(Math.random() * current.sides);
-    lastResult = result;
-    showResult(result);
-    rolling = false;
-    rollBtn.disabled = false;
-    sendBtn.disabled = false;
-    sendBtn.classList.add('ready');
-    captionEl.textContent = `${current.label} · resultado ${result}`;
-    pushHistory(current.label, result);
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-  }
-
-  function sendToChat(){
-    if (lastResult === null) return;
-    const payload = { die: current.id, sides: current.sides, result: lastResult };
-    if (tg && tg.sendData){
-      tg.sendData(JSON.stringify(payload));
-    } else {
-      alert('Resultado: ' + current.label + ' → ' + lastResult + '\n(Abra pelo Telegram para enviar ao chat.)');
-    }
-  }
-
-  rollBtn.addEventListener('click', roll);
-  sendBtn.addEventListener('click', sendToChat);
 
   buildChips();
   initThree();
