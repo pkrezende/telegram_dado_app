@@ -98,6 +98,18 @@
     margin-bottom:10px;
   }
 
+  .mestre-toggle{
+    display:none;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    color: var(--parchment);
+    margin-bottom:10px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .mestre-toggle input{ accent-color: var(--ember); width:14px; height:14px; }
+
   .selector{
     display:flex;
     gap:8px;
@@ -179,6 +191,9 @@
     60%{ transform: translate(-50%,-50%) scale(1.12); opacity:1; }
     100%{ transform: translate(-50%,-50%) scale(1); opacity:1; }
   }
+  .side-badge{ width:46px; height:46px; font-size:17px; }
+  .side-badge.left{ left:20%; top:22%; }
+  .side-badge.right{ left:80%; top:22%; }
 
   .caption{
     font-size:12px;
@@ -306,6 +321,10 @@
 
   <div class="players" id="players"></div>
   <div class="turn-banner" id="turnBanner">&nbsp;</div>
+  <label class="mestre-toggle" id="mestreToggle">
+    <input type="checkbox" id="hideToggle" />
+    <span>🎭 Ocultar essa rolagem dos jogadores</span>
+  </label>
 
   <div class="selector" id="selector"></div>
 
@@ -313,6 +332,8 @@
     <div class="tray"></div>
     <canvas id="dieCanvas"></canvas>
     <div class="result-badge" id="badge"><span id="badgeNum"></span></div>
+    <div class="result-badge side-badge left" id="badgeLeft"><span id="badgeLeftNum"></span></div>
+    <div class="result-badge side-badge right" id="badgeRight"><span id="badgeRightNum"></span></div>
   </div>
 
   <div class="caption" id="caption">&nbsp;</div>
@@ -377,6 +398,13 @@
   const nameErr = document.getElementById('nameErr');
   const nameSubmit = document.getElementById('nameSubmit');
 
+  function isMestre(){
+    return !!(playerName && playerName.trim().toLowerCase() === 'mestre');
+  }
+  function updateMestreUI(){
+    document.getElementById('mestreToggle').style.display = isMestre() ? 'flex' : 'none';
+  }
+
   function enterTable(name){
     playerName = name;
     localStorage.setItem('mesa_dados_nome', playerName);
@@ -384,6 +412,7 @@
     const meRef = roomRef.child('jogadores/' + playerId);
     meRef.set({ name: playerName, ts: firebase.database.ServerValue.TIMESTAMP });
     meRef.onDisconnect().remove();
+    updateMestreUI();
   }
 
   nameSubmit.addEventListener('click', () => {
@@ -398,6 +427,7 @@
     const meRef = roomRef.child('jogadores/' + playerId);
     meRef.set({ name: playerName, ts: firebase.database.ServerValue.TIMESTAMP });
     meRef.onDisconnect().remove();
+    updateMestreUI();
   } else {
     nameModal.style.display = 'flex';
   }
@@ -422,6 +452,7 @@
     { id:'d12', sides:12,  label:'D12', duration:1250, icon:'dodeca' },
     { id:'d20', sides:20,  label:'D20', duration:1400, icon:'icosa' },
     { id:'d100',sides:100, label:'D100',duration:1500, icon:'pair' },
+    { id:'dc10',sides:null,label:'DC Mayfair', duration:1150, icon:'dc' },
   ];
   const DICE_BY_ID = Object.fromEntries(DICE.map(d => [d.id, d]));
 
@@ -429,6 +460,7 @@
   let rolling = false;
   let myTurn = null; // {playerId, name, ts} or null
   let lastRollTs = 0;
+  let dcChainTotal = 0; // acumulado de duplos em andamento no DC Mayfair (só relevante pra quem está rolando)
 
   const selectorEl = document.getElementById('selector');
   const captionEl = document.getElementById('caption');
@@ -447,7 +479,8 @@
       kite:     '<polygon points="10,1 18,8 10,19 2,8"/>',
       dodeca:   '<polygon points="10,1 15,4 18,9 16,15 10,19 4,15 2,9 5,4"/>',
       icosa:    '<circle cx="10" cy="10" r="8.5"/>',
-      pair:     '<circle cx="6" cy="10" r="5.5"/><circle cx="14" cy="10" r="5.5"/>'
+      pair:     '<circle cx="6" cy="10" r="5.5"/><circle cx="14" cy="10" r="5.5"/>',
+      dc:       '<polygon points="10,1 18,8 10,19 2,8"/><text x="10" y="12.5" text-anchor="middle" font-size="6.5" font-weight="700" fill="currentColor" stroke="none">DC</text>'
     };
     return `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">${icons[shape]}</svg>`;
   }
@@ -459,16 +492,22 @@
       chip.className = 'chip' + (d.id === current.id ? ' active' : '');
       chip.innerHTML = iconSvg(d.icon) + `<span>${d.label}</span>`;
       chip.addEventListener('click', () => {
-        if (rolling) return;
+        if (rolling || dcChainTotal > 0) return;
         current = d;
         buildChips();
         setDie(current.id);
         hideBadge();
+        hideSideBadges();
         captionEl.textContent = '';
       });
       selectorEl.appendChild(chip);
     });
   }
+
+  const badgeLeft = document.getElementById('badgeLeft');
+  const badgeRight = document.getElementById('badgeRight');
+  const badgeLeftNum = document.getElementById('badgeLeftNum');
+  const badgeRightNum = document.getElementById('badgeRightNum');
 
   function hideBadge(){
     badge.classList.remove('show');
@@ -480,6 +519,22 @@
     badge.classList.remove('show');
     void badge.offsetWidth;
     badge.classList.add('show');
+  }
+  function hideSideBadges(){
+    [badgeLeft, badgeRight].forEach(b => {
+      b.classList.remove('show');
+      b.style.opacity = 0;
+      b.style.transform = 'translate(-50%,-50%) scale(0.4)';
+    });
+  }
+  function showSideBadges(d1, d2){
+    badgeLeftNum.textContent = d1;
+    badgeRightNum.textContent = d2;
+    [badgeLeft, badgeRight].forEach(b => {
+      b.classList.remove('show');
+      void b.offsetWidth;
+      b.classList.add('show');
+    });
   }
 
   /* ---------- lista de jogadores + vez ---------- */
@@ -505,6 +560,7 @@
         const id = inp.dataset.pid;
         if (id !== playerId) return;
         if (myTurn && myTurn.playerId === playerId){
+          dcChainTotal = 0;
           roomRef.child('vez').remove();
         } else {
           claimTurn();
@@ -529,8 +585,8 @@
       turnBanner.innerHTML = '&nbsp;';
     } else if (myTurn.playerId === playerId){
       rollBtn.disabled = rolling;
-      rollBtn.textContent = 'Lançar';
-      turnBanner.textContent = 'Sua vez — escolha o dado e lance';
+      rollBtn.textContent = dcChainTotal > 0 ? 'Rolar de novo (duplo!)' : 'Lançar';
+      if (dcChainTotal === 0) turnBanner.textContent = 'Sua vez — escolha o dado e lance';
     } else {
       rollBtn.disabled = true;
       rollBtn.textContent = `${myTurn.name} está com a vez`;
@@ -562,12 +618,52 @@
     const r = snap.val();
     if (!r || r.ts === lastRollTs) return;
     lastRollTs = r.ts;
-    playSyncedRoll(r);
+    dispatchSyncedRoll(r);
   });
+
+  function releaseTurnIfMine(r, chainContinues){
+    if (r.playerId !== playerId) return;
+    if (chainContinues){
+      rollBtn.textContent = 'Rolar de novo (duplo!)';
+      rollBtn.disabled = false;
+    } else {
+      dcChainTotal = 0;
+      roomRef.child('vez').remove();
+    }
+  }
+
+  function dispatchSyncedRoll(r){
+    // rolagem oculta do Mestre: quem não é o próprio Mestre só vê o aviso, sem número
+    if (r.hidden && r.playerId !== playerId){
+      playHiddenRoll(r);
+      return;
+    }
+    if (r.die === 'dc10'){
+      playSyncedDcRoll(r);
+      return;
+    }
+    playSyncedRoll(r);
+  }
+
+  function playHiddenRoll(r){
+    rolling = true;
+    hideBadge();
+    hideSideBadges();
+    const dieDef = DICE_BY_ID[r.die] || current;
+    turnBanner.textContent = `🎩 ${r.name} está rolando os dados…`;
+    captionEl.textContent = 'Resultado oculto';
+    setTimeout(() => {
+      rolling = false;
+      turnBanner.textContent = `🎩 ${r.name} rolou os dados em segredo`;
+      captionEl.textContent = '';
+      renderTurnState();
+    }, dieDef.duration || 1000);
+  }
 
   async function playSyncedRoll(r){
     rolling = true;
     hideBadge();
+    hideSideBadges();
     turnBanner.textContent = `🎲 ${r.name} está lançando o ${r.label}…`;
     captionEl.textContent = 'Rolando…';
 
@@ -588,21 +684,83 @@
     vibrate([10, 30, 10]);
     rolling = false;
 
-    // quem lançou libera a vez depois que a animação termina
-    if (r.playerId === playerId){
-      roomRef.child('vez').remove();
+    releaseTurnIfMine(r, false);
+    renderTurnState();
+  }
+
+  async function playSyncedDcRoll(r){
+    rolling = true;
+    hideBadge();
+    hideSideBadges();
+    turnBanner.textContent = `🎲 ${r.name} está lançando DC Mayfair…`;
+    captionEl.textContent = 'Rolando…';
+
+    const dieDef = DICE_BY_ID['dc10'];
+    if (current.id !== 'dc10'){
+      current = dieDef;
+      buildChips();
     }
+    setDie('dc10');
+    vibrate(30);
+
+    await startRoll(dieDef.duration);
+
+    showSideBadges(r.d1, r.d2);
+
+    if (r.isFumble){
+      showResult('💀');
+      captionEl.textContent = `${r.name}: ${r.d1} e ${r.d2} — FAMBOU!!!`;
+      turnBanner.textContent = `💀 ${r.name} FAMBOU!!! (duplo de 1)`;
+      pushHistory('DC', 'FAMBOU', r.name);
+      vibrate([50, 50, 50]);
+    } else if (r.isDouble){
+      showResult(r.runningTotal);
+      captionEl.textContent = `${r.name}: ${r.d1} e ${r.d2} — DUPLO! parcial ${r.runningTotal}`;
+      turnBanner.textContent = `🎲 Duplo! ${r.name} rola de novo — acumulado ${r.runningTotal}`;
+      vibrate([10, 20, 10, 20]);
+    } else {
+      showResult(r.runningTotal);
+      captionEl.textContent = `${r.name}: ${r.d1} + ${r.d2} = ${r.runningTotal}`;
+      turnBanner.textContent = `🎲 ${r.name} tirou ${r.runningTotal} no DC Mayfair`;
+      pushHistory('DC', r.runningTotal, r.name);
+      vibrate([10, 30, 10]);
+    }
+
+    rolling = false;
+    releaseTurnIfMine(r, r.chainContinues);
     renderTurnState();
   }
 
   async function requestRoll(){
     if (rolling) return;
     if (!myTurn || myTurn.playerId !== playerId) return;
+    const hidden = isMestre() && document.getElementById('hideToggle').checked;
+
+    if (current.id === 'dc10'){
+      const d1 = 1 + Math.floor(Math.random() * 10);
+      const d2 = 1 + Math.floor(Math.random() * 10);
+      const isDouble = d1 === d2;
+      const isFumble = isDouble && d1 === 1;
+      const subtotal = d1 + d2;
+      const runningTotal = dcChainTotal + subtotal;
+      const chainContinues = isDouble && !isFumble;
+
+      dcChainTotal = chainContinues ? runningTotal : 0;
+      rollBtn.disabled = true;
+
+      roomRef.child('rolagem').push({
+        playerId, name: playerName, die: 'dc10', label: 'DC Mayfair',
+        d1, d2, isDouble, isFumble, subtotal, runningTotal, chainContinues,
+        hidden, ts: Date.now()
+      });
+      return;
+    }
+
     const result = 1 + Math.floor(Math.random() * current.sides);
     roomRef.child('rolagem').push({
       playerId, name: playerName,
       die: current.id, label: current.label, sides: current.sides,
-      result, ts: Date.now()
+      result, hidden, ts: Date.now()
     });
   }
 
@@ -750,6 +908,14 @@
         const a = makeD10Unit(0.62, Array.from({length:10}, (_,i) => i));
         a.position.x = -0.72;
         const b = makeD10Unit(0.62, Array.from({length:10}, (_,i) => i));
+        b.position.x = 0.72;
+        g.add(a, b);
+        break;
+      }
+      case 'dc10': {
+        const a = makeD10Unit(0.62, Array.from({length:10}, (_,i) => i+1));
+        a.position.x = -0.72;
+        const b = makeD10Unit(0.62, Array.from({length:10}, (_,i) => i+1));
         b.position.x = 0.72;
         g.add(a, b);
         break;
