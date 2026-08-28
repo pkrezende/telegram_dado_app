@@ -107,8 +107,18 @@
     margin-bottom:10px;
     cursor:pointer;
     user-select:none;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid transparent;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
   }
   .mestre-toggle input{ accent-color: var(--ember); width:14px; height:14px; }
+  .mestre-toggle.on{
+    background: rgba(226,87,43,0.16);
+    border-color: var(--ember);
+    color: #ffb59c;
+    font-weight:700;
+  }
 
   .selector{
     display:flex;
@@ -229,26 +239,6 @@
   button.roll:active{ transform: scale(0.97); }
   button.roll:disabled{ opacity:.55; cursor:default; transform:none; box-shadow:none; }
 
-  .history{
-    margin-top:18px;
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
-    justify-content:center;
-    max-width:340px;
-    min-height:26px;
-  }
-  .history .h-item{
-    font-size:11px;
-    font-weight:600;
-    padding:4px 9px;
-    border-radius:999px;
-    background: rgba(242,232,213,0.06);
-    color: var(--parchment);
-    border:1px solid rgba(242,232,213,0.1);
-  }
-  .history .h-item b{ color: var(--brass-bright); font-weight:700;}
-
   .link-row{
     display:flex;
     gap:10px;
@@ -342,10 +332,9 @@
     <button class="roll" id="rollBtn" disabled>Marque sua vez pra lançar</button>
   </div>
 
-  <div class="history" id="history"></div>
-
   <div class="link-row">
     <button class="linkbtn" id="copyBtn">Copiar link da mesa</button>
+    <button class="linkbtn" id="switchBtn">Trocar de jogador</button>
   </div>
 
   <div class="name-modal" id="nameModal">
@@ -366,10 +355,10 @@
      Firebase Console → Configurações do projeto → Seus apps → Config
      ========================================================= */
   const firebaseConfig = {
-    apiKey: "AIzaSyBeScUfwBkzMiEKbox29egWXNEMafbhvkk",
-    authDomain: "rpg-dice-sync.firebaseapp.com",
-    databaseURL: "https://rpg-dice-sync-default-rtdb.firebaseio.com",
-    projectId: "rpg-dice-sync"
+    apiKey: "COLE_SUA_API_KEY_AQUI",
+    authDomain: "SEU-PROJETO.firebaseapp.com",
+    databaseURL: "https://SEU-PROJETO-default-rtdb.firebaseio.com",
+    projectId: "SEU-PROJETO"
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
@@ -402,8 +391,17 @@
     return !!(playerName && playerName.trim().toLowerCase() === 'mestre');
   }
   function updateMestreUI(){
-    document.getElementById('mestreToggle').style.display = isMestre() ? 'flex' : 'none';
+    const isM = isMestre();
+    document.getElementById('mestreToggle').style.display = isM ? 'flex' : 'none';
+    if (isM) document.getElementById('hideToggle').checked = true; // padrão: oculto, pra não esquecer
+    updateRollBtnHiddenHint();
   }
+  function updateRollBtnHiddenHint(){
+    const hint = document.getElementById('hideToggle');
+    document.getElementById('mestreToggle').classList.toggle('on', !!(hint && hint.checked));
+    renderTurnState();
+  }
+  document.getElementById('hideToggle').addEventListener('change', updateRollBtnHiddenHint);
 
   function enterTable(name){
     playerName = name;
@@ -432,7 +430,7 @@
     nameModal.style.display = 'flex';
   }
 
-  /* ---------- copiar link da mesa ---------- */
+  /* ---------- copiar link da mesa / trocar de jogador ---------- */
   document.getElementById('copyBtn').addEventListener('click', () => {
     const url = location.origin + location.pathname + '?sala=' + encodeURIComponent(sala);
     navigator.clipboard.writeText(url).then(() => {
@@ -441,6 +439,14 @@
       btn.textContent = 'Link copiado!';
       setTimeout(() => { btn.textContent = old; }, 1500);
     }).catch(() => { alert(url); });
+  });
+
+  document.getElementById('switchBtn').addEventListener('click', () => {
+    // sai da mesa atual e limpa o nome salvo, pra pedir de novo
+    roomRef.child('jogadores/' + playerId).remove();
+    if (myTurn && myTurn.playerId === playerId) roomRef.child('vez').remove();
+    localStorage.removeItem('mesa_dados_nome');
+    location.reload();
   });
 
   /* ---------- dados / seleção local ---------- */
@@ -465,7 +471,6 @@
   const selectorEl = document.getElementById('selector');
   const captionEl = document.getElementById('caption');
   const rollBtn = document.getElementById('rollBtn');
-  const historyEl = document.getElementById('history');
   const playersEl = document.getElementById('players');
   const turnBanner = document.getElementById('turnBanner');
   const badge = document.getElementById('badge');
@@ -585,7 +590,9 @@
       turnBanner.innerHTML = '&nbsp;';
     } else if (myTurn.playerId === playerId){
       rollBtn.disabled = rolling;
-      rollBtn.textContent = dcChainTotal > 0 ? 'Rolar de novo (duplo!)' : 'Lançar';
+      const hideOn = isMestre() && document.getElementById('hideToggle').checked;
+      const base = dcChainTotal > 0 ? 'Rolar de novo (duplo!)' : 'Lançar';
+      rollBtn.textContent = hideOn ? `🎭 ${base} em segredo` : base;
       if (dcChainTotal === 0) turnBanner.textContent = 'Sua vez — escolha o dado e lance';
     } else {
       rollBtn.disabled = true;
@@ -606,14 +613,6 @@
   });
 
   /* ---------- rolagem sincronizada ---------- */
-  function pushHistory(label, value, name){
-    const row = document.createElement('span');
-    row.className = 'h-item';
-    row.innerHTML = `${escapeHtml(label)} <b>${escapeHtml(String(value))}</b> · ${escapeHtml(name)}`;
-    historyEl.insertBefore(row, historyEl.firstChild);
-    while (historyEl.children.length > 8) historyEl.removeChild(historyEl.lastChild);
-  }
-
   roomRef.child('rolagem').limitToLast(1).on('child_added', snap => {
     const r = snap.val();
     if (!r || r.ts === lastRollTs) return;
@@ -680,7 +679,6 @@
     showResult(r.result);
     captionEl.textContent = `${dieDef.label} · ${r.name} tirou ${r.result}`;
     turnBanner.textContent = `🎲 ${r.name} tirou ${r.result} no ${dieDef.label}`;
-    pushHistory(dieDef.label, r.result, r.name);
     vibrate([10, 30, 10]);
     rolling = false;
 
@@ -711,7 +709,6 @@
       showResult('💀');
       captionEl.textContent = `${r.name}: ${r.d1} e ${r.d2} — FAMBOU!!!`;
       turnBanner.textContent = `💀 ${r.name} FAMBOU!!! (duplo de 1)`;
-      pushHistory('DC', 'FAMBOU', r.name);
       vibrate([50, 50, 50]);
     } else if (r.isDouble){
       showResult(r.runningTotal);
@@ -722,7 +719,6 @@
       showResult(r.runningTotal);
       captionEl.textContent = `${r.name}: ${r.d1} + ${r.d2} = ${r.runningTotal}`;
       turnBanner.textContent = `🎲 ${r.name} tirou ${r.runningTotal} no DC Mayfair`;
-      pushHistory('DC', r.runningTotal, r.name);
       vibrate([10, 30, 10]);
     }
 
